@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "namespace": "sptrans",
+  "name": "BusPosition",
+  "version": "1",
+  "fields": [
+    {"name": "vehicle_id", "type": "string", "doc": "Identificador único do veículo"},
+    {"name": "line_id", "type": "string", "doc": "Código da linha de ônibus"},
+    {"name": "latitude", "type": "double", "doc": "Latitude da posição"},
+    {"name": "longitude", "type": "double", "doc": "Longitude da posição"},
+    {"name": "timestamp", "type": "long", "logicalType": "timestamp-millis", "doc": "Timestamp da captura (epoch millis)"},
+    {"name": "speed", "type": ["null", "double"], "default": null, "doc": "Velocidade em km/h (opcional)"}
+  ]
+}
