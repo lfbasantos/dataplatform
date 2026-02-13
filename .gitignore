@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Spark JARs (downloaded at runtime by start-spark.sh)
+src/spark/jars/*.jar
