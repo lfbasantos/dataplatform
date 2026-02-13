@@ -36,6 +36,9 @@ if docker ps -a --format '{{.Names}}' | grep -q '^nifi$'; then
 fi
 
 # Executar container
+echo "🚀 Criando volume persistente..."
+docker volume create nifi-data 2>/dev/null || echo "  Volume nifi-data já existe"
+
 echo "🚀 Iniciando container..."
 docker run -d \
   --name nifi \
@@ -44,6 +47,7 @@ docker run -d \
   -e SINGLE_USER_CREDENTIALS_PASSWORD="$NIFI_PASSWORD" \
   -e NIFI_WEB_HTTPS_PORT=8443 \
   -e NIFI_WEB_PROXY_HOST="$PROXY_HOST" \
+  -v nifi-data:/opt/nifi/nifi-current/conf \
   --link minio:minio \
   --link schema-registry:schema-registry \
   apache/nifi:1.25.0
