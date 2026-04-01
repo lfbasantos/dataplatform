@@ -1,138 +1,208 @@
-Framework de Engenharia de Dados Orientada a Agentes (ADE)
-Documento de Arquitetura e Constituição do Sistema
+# Framework de Engenharia de Dados Orientada a Agentes (ADE)
+## Documento de Arquitetura e “Constituição” do Sistema
 
-1. Visão Geral e Objetivo
-Este documento define as diretrizes, a arquitetura e os padrões de operação para um Multi-Agent System (MAS) aplicado à Engenharia de Dados. O objetivo deste framework é fazer a transição de pipelines puramente imperativos para Pipelines Declarativos e Baseados em Intenção, utilizando inteligência artificial para design, revisão e qualidade de código, mantendo a execução orquestrada sob rígidos Guardiões Determinísticos (Deterministic Guardrails).
+> **Propósito**: definir diretrizes, arquitetura e padrões operacionais de um **Multi‑Agent System (MAS)** aplicado à Engenharia de Dados, com **geração/recuperação assistida por LLMs** e **execução determinística** ancorada em orquestradores tradicionais e guardrails.
 
-A arquitetura resolve o gargalo de desenvolvimento e manutenção de catálogos de dados extensos, delegando a criação e o self-healing (auto-cura) a agentes LLM, enquanto a execução rotineira e o consumo computacional permanecem ancorados em orquestradores tradicionais open-source.
+---
 
-2. Glossário e Conceitos-Chave (Rastreabilidade de Mercado)
-Para alinhamento com iniciativas de mercado e literatura de LLM Ops, adotamos a seguinte nomenclatura:
+## Sumário
+1. [Visão Geral](#1-visão-geral)
+2. [Escopo e Não‑Escopo](#2-escopo-e-não-escopo)
+3. [Glossário e Conceitos‑Chave](#3-glossário-e-conceitos-chave-rastreabilidade-de-mercado)
+4. [Topologia do Sistema](#4-topologia-do-sistema)
+5. [Agentes e Responsabilidades](#5-agentes-e-responsabilidades)
+6. [Fluxos de Operação (Diagramas)](#6-fluxos-de-operação-diagramas)
+7. [Constituição do Sistema (Prompts, Estado e Regras)](#7-a-constituição-do-sistema-prompts-estado-e-regras)
+8. [Guardrails, Segurança e Governança](#8-guardrails-segurança-e-governança)
+9. [Observabilidade e SLOs](#9-observabilidade-e-slos)
 
-ADE (Agentic Data Engineering): Paradigma onde agentes de IA autônomos gerenciam o ciclo de vida dos dados (ingestão, transformação, modelagem), guiados por metadados e intenções declarativas (YAML), em vez de scripts manuais.
+---
 
-MAS (Multi-Agent System): Sistema composto por múltiplos agentes de IA interagindo entre si. Neste framework, aplicamos o princípio de Segregation of Duties (Segregação de Funções) entre agentes de criação, revisão e qualidade.
+## 1. Visão Geral
+Este framework realiza a transição de pipelines puramente imperativos para **pipelines declarativos e orientados a intenção**. A IA atua como força de trabalho para:
 
-Tiered LLM Architecture (Arquitetura LLM em Camadas): Estratégia de otimização de custos e latência que utiliza Modelos de Fronteira (Frontier Models, ex: Claude 3.5 Sonnet/Opus, GPT-4o) para tarefas complexas de raciocínio, e Modelos Locais/Menores (SLMs - Small Language Models, ex: Llama 3 8B via Ollama) para roteamento e monitoramento contínuo.
+- **Criar** e **evoluir** pipelines (código SQL/Python e configuração),
+- **Revisar** (lint, performance estática, padrões),
+- **Validar qualidade e fidelidade dos dados** (profiling/testes),
+- **Apoiar self-healing** (propor correções com base em logs e runbooks),
 
-Deterministic Guardrails (Guardiões Determinísticos): Ferramentas clássicas de validação (ex: sqlfluff, testes de Data Quality, Profilers) que atuam como juízes absolutos sobre o código gerado pela IA. Os agentes iteram com base nos erros dessas ferramentas, eliminando a subjetividade da IA.
+enquanto a **execução rotineira** permanece sob um **orquestrador determinístico** (Airflow/Dagster etc.) e sob **Guardiões Determinísticos** (linters, testes, políticas de CI/CD).
 
-DaC (Documentation-as-Code) para Gerenciamento de Estado: Abordagem onde o "estado" e a "memória" dos agentes (que são stateless por natureza) são armazenados em arquivos Markdown (.md). Inspiração direta no "Padrão Amnesia", garantindo que humanos e máquinas compartilhem o mesmo contexto auditável.
+---
 
-Circuit Breaker (Disjuntor): Padrão de confiabilidade que interrompe processos em loop. No contexto de IA, é o mecanismo que impede o esgotamento de tokens ou o estouro de janelas de tempo (SLAs) em caso de falhas contínuas de raciocínio.
+## 2. Escopo e Não‑Escopo
+### Escopo
+- Criação/refatoração de pipelines a partir de especificações declarativas (ex.: YAML).
+- Revisão automática de código via ferramentas determinísticas.
+- Validação em sandbox e abertura de PR com evidências (ex.: relatórios).
+- Self-healing baseado em catálogo de erros (runbook) + limites (circuit breaker).
 
-3. Topologia do Sistema
-A arquitetura integra componentes tradicionais de engenharia de dados com o ecossistema de agentes.
+### Não‑Escopo (por padrão)
+- Execução “autônoma” em produção sem PR/approval humano (a menos que explicitamente habilitado).
+- Acesso direto de agentes a segredos de produção fora do padrão do orquestrador/CI.
+- Mudanças em dados de produção sem trilha auditável (PR + logs + artefatos).
 
-3.1. Camada de Integração e Orquestração
-N Fontes de Dados: APIs, Bancos Relacionais, Sistemas IoT, Mensageria.
+---
 
-Data Lake / Data Warehouse: O destino final para armazenamento e processamento distribuído.
+## 3. Glossário e Conceitos‑Chave (Rastreabilidade de Mercado)
+Para alinhamento com iniciativas de mercado e literatura de LLM Ops:
 
-Orquestrador (O "Motor"): Ferramenta open-source (ex: Apache Airflow, Dagster). Ele executa DAGs compiladas e aciona o Agente Monitor via logs ou webhooks. Ele não "pensa", apenas executa e reporta.
+- **ADE (Agentic Data Engineering)**: paradigma em que agentes autônomos gerenciam o ciclo de vida de dados (ingestão, transformação, modelagem) guiados por **metadados** e **intenções declarativas** (ex.: YAML), em vez de scripts manuais.
+- **MAS (Multi‑Agent System)**: múltiplos agentes interagindo sob o princípio de **Segregation of Duties** (criação ≠ revisão ≠ qualidade).
+- **Tiered LLM Architecture (Arquitetura em camadas)**: uso de **modelos de fronteira** para raciocínio/geração (ex.: GPT‑4‑class, Claude‑class) e **SLMs locais** (ex.: Llama‑class via Ollama) para roteamento/triagem e monitoramento.
+- **Deterministic Guardrails (Guardiões Determinísticos)**: ferramentas objetivas (ex.: `sqlfluff`, testes de qualidade, validadores de schema, profilers) que atuam como **juízes finais** do output. A IA itera até satisfazer essas ferramentas.
+- **Documentation‑as‑Code (DaC) para Estado**: agentes são stateless; o estado operacional fica em arquivos versionados (Markdown/YAML) para auditabilidade.
+- **Circuit Breaker**: mecanismo de confiabilidade para interromper loops (limite de iterações, orçamento de tempo, custo/tokens).
 
-Repositório Git (A "Memória de Longo Prazo"): Armazena configurações (.yaml), regras de guardrails, estado de execução (.md) e os artefatos finais de código (SQL/Python).
+---
 
-3.2. Camada de Agentes (MAS)
-Agent Monitor (O Roteador): SLM local (via Ollama). Lê logs do orquestrador, classifica erros de acordo com o catálogo (Runbook) e despacha a tarefa.
+## 4. Topologia do Sistema
+A arquitetura integra componentes clássicos de engenharia de dados com o ecossistema de agentes.
 
-Agent-Job (O Construtor): Modelo de Fronteira. Lê as especificações em YAML e os esquemas de origem/destino, e escreve o código de transformação e extração.
+### 4.1. Camada de Integração e Execução
+- **Fontes de Dados (N)**: APIs, bancos relacionais, IoT, mensageria, arquivos, etc.
+- **Data Lake / Data Warehouse**: destino final de armazenamento/compute.
+- **Orquestrador (“Motor”)**: Airflow/Dagster (ou equivalente).  
+  - Executa DAGs/tarefas determinísticas.
+  - Emite logs e eventos (webhooks) para monitoramento.
+  - **Não toma decisões de design**; apenas executa e reporta.
+- **CI/CD**: pipeline de validação (lint, testes, profiling, policy checks).
+- **Repositório Git (“Memória de Longo Prazo”)**:
+  - Especificações (`.yaml`)
+  - Regras/Config de guardrails
+  - Estado do agente (`contexto.md`, `plano.md`, `tasks.md`)
+  - Artefatos finais (SQL/Python)
+  - Evidências (ex.: `Profiling_Report.md`)
 
-Agent-Review (O Revisor de Sintaxe e Performance): Avalia o código do Agent-Job estritamente contra as regras do linter (ex: sqlfluff) e regras de complexidade pré-definidas.
+---
 
-Agent-Quality (O Revisor de Dados): Executa testes de perfilamento (profiling) nos dados gerados em sandbox comparando origem e destino para aprovar a fidelidade da carga.
+## 5. Agentes e Responsabilidades
+> Regra: **um agente propõe, outro valida**. O agente de criação não “julga” seu próprio trabalho.
 
-4. Fluxos de Operação (Diagramas)
-4.1. Fluxo de Desenvolvimento e Deploy (CI/CD Guiado por IA)
-Este fluxo ocorre na criação de um novo pipeline ou na refatoração de um existente.
+| Agente | Papel | Modelo sugerido | Entradas | Saídas |
+|---|---|---|---|---|
+| **Agent Monitor** | Roteamento/triagem; classifica falhas; aciona fluxos | SLM local | logs, eventos, runbook | tarefa para Agent‑Job; atualização de `tasks.md` |
+| **Agent‑Job** | Constrói/ajusta pipeline | Frontier model | YAML, schemas, contexto atual | código SQL/Python; atualização de `contexto.md`, `plano.md`, `tasks.md` |
+| **Agent‑Review** | Revisor determinístico de sintaxe/padrões/perf estática | Pode ser LLM + ferramentas | PR branch; regras de lint | feedback objetivo (erros); aprovação p/ qualidade |
+| **Agent‑Quality** | Valida fidelidade/qualidade em sandbox | LLM + ferramentas de dados | datasets sandbox; regras DQ | relatório; aprovação/reprovação; gatilhos de retry |
 
-Snippet de código
+Observação: “Agent‑Review” e “Agent‑Quality” devem tratar **ferramentas determinísticas** como fonte primária de verdade; LLM serve para interpretar mensagens e propor correções.
+
+---
+
+## 6. Fluxos de Operação (Diagramas)
+
+### 6.1. Fluxo de Desenvolvimento e Deploy (CI/CD guiado por IA)
+Este fluxo ocorre na criação de um pipeline novo ou refatoração de um existente.
+
+```mermaid
 sequenceDiagram
     participant Engenheiro
     participant Git_Repo
     participant Agent_Job
     participant Agent_Review
     participant Agent_Quality
-    
-    Engenheiro->>Git_Repo: Submete YAML (Origem, Destino, Regras)
-    Git_Repo->>Agent_Job: Webhook Aciona Criação
-    Agent_Job->>Agent_Job: Analisa Metadados e Escreve tasks.md
-    Agent_Job->>Agent_Job: Gera Código (SQL/Python)
-    Agent_Job->>Agent_Review: Submete Código
-    
-    loop Até passar no Linting (Max Retries)
-        Agent_Review->>Agent_Review: Roda Guardrails (ex: sqlfluff)
+
+    Engenheiro->>Git_Repo: Submete YAML (origem, destino, regras)
+    Git_Repo->>Agent_Job: Webhook aciona criação/atualização
+
+    Agent_Job->>Agent_Job: Atualiza contexto.md / plano.md / tasks.md
+    Agent_Job->>Agent_Job: Gera/ajusta código (SQL/Python)
+    Agent_Job->>Agent_Review: Submete para revisão
+
+    loop Até passar no lint (max_retries)
+        Agent_Review->>Agent_Review: Executa guardrails (ex: sqlfluff)
         alt Erro
-            Agent_Review-->>Agent_Job: Retorna String de Erro
-            Agent_Job->>Agent_Job: Corrige Código
+            Agent_Review-->>Agent_Job: Retorna erros objetivos
+            Agent_Job->>Agent_Job: Corrige código
         end
     end
-    
-    Agent_Review->>Agent_Quality: Passa para Teste de Dados
-    
-    loop Até passar no Profiling (Max Retries)
-        Agent_Quality->>Agent_Quality: Roda Testes de Qualidade (Sandbox)
+
+    Agent_Review->>Agent_Quality: Encaminha para validação de dados
+
+    loop Até passar no profiling/testes (max_retries)
+        Agent_Quality->>Agent_Quality: Executa profiling e testes em sandbox
         alt Divergência
-            Agent_Quality-->>Agent_Job: Retorna Relatório de Profiling
-            Agent_Job->>Agent_Job: Ajusta Lógica de Negócio
+            Agent_Quality-->>Agent_Job: Retorna relatório e diffs
+            Agent_Job->>Agent_Job: Ajusta lógica de negócio
         end
     end
-    
-    Agent_Quality->>Git_Repo: Abre Pull Request (Código + Profiling_Report.md)
-    Git_Repo->>Engenheiro: Notifica para Validação Final
-    Engenheiro->>Git_Repo: Approve & Merge -> Orquestrador assume
-4.2. Fluxo de Resiliência (Self-Healing & Circuit Breaker)
-Este fluxo é ativado quando o Orquestrador falha durante a carga de produção.
 
-Snippet de código
+    Agent_Quality->>Git_Repo: Abre Pull Request (código + evidências)
+    Git_Repo->>Engenheiro: Solicita validação final
+    Engenheiro->>Git_Repo: Approve & Merge
+```
+
+### 6.2. Fluxo de Resiliência (Self‑Healing + Circuit Breaker)
+Ativado quando o orquestrador falha em produção.
+
+```mermaid
 graph TD
-    A[Falha no Orquestrador] --> B(Geração de Log de Erro)
-    B --> C{Agent Monitor analisa Erro}
-    
-    C -- Erro Catalogado (Runbook) --> D[Despacha para Agent-Job iniciar Correção]
-    D --> E{Validação Review/Quality}
-    E -- Passou --> F[Abre Pull Request para Retomar Pipeline]
-    E -- Falhou sucessivamente --> G(Dispara Circuit Breaker: Limite de Iterações)
-    
-    C -- Erro Desconhecido/Anomalia de Negócio --> H(Dispara Circuit Breaker: SLA/Timeout)
-    
-    G --> I[Atualiza tasks.md com STATUS_LOCKED]
+    A[Falha no Orquestrador] --> B[Log/Evento de erro]
+    B --> C{Agent Monitor analisa erro}
+
+    C -->|Erro catalogado (Runbook)| D[Despacha para Agent-Job propor correção]
+    D --> E{Review + Quality}
+    E -->|Passou| F[Abre PR para correção e retomada]
+    E -->|Falhou repetidamente| G[Dispara Circuit Breaker (max_retries)]
+
+    C -->|Erro desconhecido/anomalia| H[Dispara Circuit Breaker (timeout/SLA)]
+
+    G --> I[Atualiza tasks.md com STATUS: CIRCUIT_BREAKER_TRIGGERED]
     H --> I
-    I --> J[Notifica Analista via PagerDuty/Slack]
-    
-    J --> K((Intervenção do Analista - HUMAN OVERRIDE))
-    K --> L[Git Commit no tasks.md]
-    L --> M[Webhook Acorda Agente para Retomar Execução]
-5. A Constituição do Sistema (System Prompt & Regras de Estado)
-Todos os agentes de criação (Job, Review, Quality) devem operar sob um System Prompt base que imponha o "Padrão Amnesia" e o uso estrito do Documentation-as-Code.
+    I --> J[Notifica analista (PagerDuty/Slack)]
+    J --> K((Intervenção humana - HUMAN_OVERRIDE))
+    K --> L[Commit em tasks.md]
+    L --> M[Webhook acorda o fluxo para retomar]
+```
 
-Diretrizes de Comportamento do Agente:
-Você não possui memória de longo prazo nativa. Seu estado atual, progresso e contexto residem integralmente no arquivo tasks.md da branch atual.
+---
 
-Antes de gerar qualquer código, você deve obrigatoriamente criar ou atualizar três arquivos:
+## 7. A Constituição do Sistema (Prompts, Estado e Regras)
+Todos os agentes de criação (Job/Review/Quality) operam sob um system prompt base que impõe:
 
-contexto.md: A interpretação do problema e metadados lidos.
+### 7.1. Princípio: “Padrão Amnésia”
+- Agentes **não possuem memória de longo prazo**.
+- Todo o estado/progresso/contexto deve residir na branch atual em:
+  - `contexto.md` — interpretação do problema e metadados lidos
+  - `plano.md` — estratégia passo a passo (Plan‑and‑Solve)
+  - `tasks.md` — checklist operacional e estado
 
-plano.md: A estratégia passo a passo (Plan-and-Solve).
+### 7.2. Subserviência aos Guardiões
+- O agente **não contesta** `sqlfluff`, testes de dados, validações de schema, políticas de CI.
+- Se falhar, **corrige e reexecuta** até:
+  - passar, ou
+  - acionar circuit breaker.
 
-tasks.md: O checklist de execução.
+### 7.3. Sintaxe de Gerenciamento de Estado (obrigatória em `tasks.md`)
+Os agentes devem utilizar e respeitar:
 
-Subserviência aos Guardiões: Você não deve contestar o Agent-Review ou os relatórios de Profiling. O output dessas ferramentas é a verdade absoluta. Adapte o seu código até que os erros desapareçam.
+- `[STATUS: PENDING | RUNNING | DONE]` — progresso de cada tarefa
+- `[STATUS: CIRCUIT_BREAKER_TRIGGERED]` — limite atingido; agente deve **parar imediatamente**
+- `[HUMAN_OVERRIDE: INITIATED] ... [HUMAN_OVERRIDE: END]` — bloco exclusivo humano
 
-Sintaxe de Gerenciamento de Estado (Obrigatório em tasks.md):
-Os agentes devem utilizar e respeitar as seguintes tipagens de blocos para controle de fluxo:
+### 7.4. Regra Suprema de Retomada
+Se ao inicializar o agente encontrar `[HUMAN_OVERRIDE: INITIATED]` em `tasks.md`, deve:
+1. Interromper qualquer raciocínio prévio sobre a tarefa.
+2. Assumir instruções do bloco como diretrizes absolutas.
+3. Retomar execução exatamente do ponto indicado pelo humano.
 
-[STATUS: PENDING | RUNNING | DONE]: Usado pela IA para marcar o progresso de cada tarefa.
+---
 
-[STATUS: CIRCUIT_BREAKER_TRIGGERED]: Inserido pela IA quando o limite de iterações ou timeout for atingido. A IA deve parar de processar imediatamente após inserir esta flag.
+## 8. Guardrails, Segurança e Governança
+Mínimos recomendados:
+- **Branch protection**: exigir CI verde e aprovação humana para merge.
+- **Permissões**: agentes criam branches/PRs, mas não fazem merge em `main` sem policy.
+- **Segredos**: acesso via secret manager do CI/orquestrador; nunca armazenar segredos em Markdown/YAML.
+- **Sandbox obrigatório**: Agent‑Quality valida em ambiente isolado com dados mascarados quando aplicável.
+- **Trilha de auditoria**: PR + artifacts + logs centralizados.
 
-[HUMAN_OVERRIDE: INITIATED] ... [HUMAN_OVERRIDE: END]: Bloco de preenchimento exclusivo humano.
+---
 
-Regra Suprema de Retomada:
-Se ao inicializar, o agente encontrar a tag [HUMAN_OVERRIDE: INITIATED] no arquivo tasks.md, ele deve:
-
-Interromper qualquer raciocínio prévio sobre aquela tarefa.
-
-Assumir as instruções contidas dentro do bloco como diretrizes absolutas e incontestáveis.
-
-Retomar a execução exatamente a partir do ponto instruído pelo humano.
+## 9. Observabilidade e SLOs
+Registrar e monitorar:
+- contagem de retries por etapa (review/quality),
+- tempo total até PR (latência),
+- taxa de falhas por categoria de runbook,
+- custos (tokens, tempo de execução, recursos),
+- SLAs de self-healing (tempo até abrir PR / tempo até intervenção humana).
